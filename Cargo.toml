@@ -1,0 +1,32 @@
+[package]
+name = "candle"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# A panic handler is needed.  This is a crate with the most basic one.
+panic-halt = "0.2.0"
+embedded-hal = "1.0"
+tinyrand = "0.5.0"
+
+[dependencies.avr-hal-generic]
+git = "https://github.com/rahix/avr-hal"
+
+[dependencies.attiny-hal]
+git = "https://github.com/rahix/avr-hal"
+features = ["attiny85", "rt"]
+
+[profile.dev]
+panic = "abort"
+lto = true
+opt-level = "s"
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1
+debug = false
+debug-assertions = false
+incremental = false
+lto = "fat"
+overflow-checks = false
+panic="abort"
