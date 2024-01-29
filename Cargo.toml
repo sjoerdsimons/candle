@@ -8,6 +8,8 @@ edition = "2021"
 panic-halt = "0.2.0"
 embedded-hal = "1.0"
 tinyrand = "0.5.0"
+avr-device = "0.5.3"
+infrared = { version = "0.14.2", features = ["nec"], path = "../infrared" }
 
 [dependencies.avr-hal-generic]
 git = "https://github.com/rahix/avr-hal"
