@@ -5,11 +5,9 @@
 use core::cell::Cell;
 
 use attiny_hal::port::{Pin, PB4};
-use attiny_hal::simple_pwm::{Prescaler, Timer1Pwm};
 use avr_device::interrupt::Mutex;
 // old embedded hal
 use avr_hal_generic::port::mode::{Floating, Input};
-use avr_hal_generic::simple_pwm::IntoPwmPin;
 use embedded_hal::delay::DelayNs;
 use embedded_hal::pwm::SetDutyCycle;
 use infrared::protocol::Nec;
@@ -22,6 +20,9 @@ type IrProto = Nec;
 
 mod clock;
 use clock::MonotonicClock;
+
+mod pwm;
+use pwm::ComplementaryOCR1BPwm;
 
 #[derive(Copy, Clone)]
 enum State {
@@ -82,10 +83,8 @@ fn main() -> ! {
     let clock = MonotonicClock::new(dp.TC0);
     clock.start();
 
-    let timer = Timer1Pwm::new(dp.TC1, Prescaler::Direct);
     let ir = Receiver::with_pin(clock.freq(), pins.pb4);
-
-    let mut pwm = pins.pb3.into_output().into_pwm(&timer);
+    let mut pwm = ComplementaryOCR1BPwm::new(dp.TC1, pins.pb3.into_output());
     pwm.enable();
     let _ = pwm.set_duty_cycle_fully_off();
 

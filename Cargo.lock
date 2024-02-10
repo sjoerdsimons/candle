@@ -5,6 +5,7 @@ version = 3
 [[package]]
 name = "attiny-hal"
 version = "0.1.0"
+source = "git+https://github.com/rahix/avr-hal#e312e6e1620bd09470afee71e6590da0ba96f369"
 dependencies = [
  "avr-device",
  "avr-hal-generic",
@@ -36,6 +37,7 @@ dependencies = [
 [[package]]
 name = "avr-hal-generic"
 version = "0.1.0"
+source = "git+https://github.com/rahix/avr-hal#e312e6e1620bd09470afee71e6590da0ba96f369"
 dependencies = [
  "avr-device",
  "cfg-if 0.1.10",
