@@ -9,7 +9,6 @@ use avr_device::interrupt::Mutex;
 // old embedded hal
 use avr_hal_generic::port::mode::{Floating, Input};
 use embedded_hal::delay::DelayNs;
-use embedded_hal::pwm::SetDutyCycle;
 use infrared::protocol::Nec;
 use infrared::Receiver;
 use panic_halt as _;
@@ -23,6 +22,9 @@ use clock::MonotonicClock;
 
 mod pwm;
 use pwm::ComplementaryOCR1BPwm;
+
+mod led;
+use led::Led;
 
 #[derive(Copy, Clone)]
 enum State {
@@ -84,9 +86,9 @@ fn main() -> ! {
     clock.start();
 
     let ir = Receiver::with_pin(clock.freq(), pins.pb4);
-    let mut pwm = ComplementaryOCR1BPwm::new(dp.TC1, pins.pb3.into_output());
-    pwm.enable();
-    let _ = pwm.set_duty_cycle_fully_off();
+    let pwm = ComplementaryOCR1BPwm::new(dp.TC1, pins.pb3.into_output());
+    let mut led = Led::new(pwm);
+    led.off();
 
     // Safety: Only set before interrupts are enabled
     unsafe {
@@ -106,16 +108,17 @@ fn main() -> ! {
         let state = avr_device::interrupt::free(|cs| STATE.borrow(cs).get());
         match state {
             State::On => {
-                let duty: u16 = rng.next_range(0..24);
-                if duty > 12 {
-                    pwm.set_duty_cycle_fully_on().unwrap();
+                let duty: u16 = rng.next_range(0..20);
+                if duty > 10 {
+                    led.on();
                 } else {
-                    pwm.set_duty_cycle_percent((22 + duty * 5) as u8).unwrap();
+                    // Flare up to 50% brightness
+                    led.brightness((duty * 5) as u8);
                 }
                 delay.delay_ms(72);
             }
             State::Off => {
-                pwm.set_duty_cycle_fully_off().unwrap();
+                led.off();
                 // Sleep until an interrupt arrives
                 avr_device::asm::sleep();
             }
