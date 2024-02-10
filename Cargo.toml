@@ -2,6 +2,8 @@
 name = "candle"
 version = "0.1.0"
 edition = "2021"
+authors = ["Sjoerd Simons <sjoerd@luon.net>"]
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 # A panic handler is needed.  This is a crate with the most basic one.
