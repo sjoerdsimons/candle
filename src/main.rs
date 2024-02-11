@@ -2,7 +2,7 @@
 #![no_main]
 #![feature(abi_avr_interrupt)]
 
-use core::cell::Cell;
+use core::cell::RefCell;
 
 use attiny_hal::port::{Pin, PB4};
 use avr_device::interrupt::Mutex;
@@ -26,35 +26,99 @@ use pwm::ComplementaryOCR1BPwm;
 mod led;
 use led::Led;
 
+// Clock speed configured in fuses
+type Speed = attiny_hal::clock::MHz1;
+
+static mut IR: Option<Receiver<IrProto, IrPin>> = None;
+static mut CLOCK: Option<clock::MonotonicClock<Speed>> = None;
+static NEW_SETTINGS: Mutex<RefCell<Option<Settings>>> =
+    Mutex::new(RefCell::new(Some(Settings::new())));
+
+#[derive(Copy, Clone)]
+struct Settings {
+    state: State,
+    brightness: u8,
+    flicker: u8,
+}
+
+impl Settings {
+    const MAX_BRIGHTNESS: u8 = 10;
+    const MAX_FLICKER: u8 = 10;
+
+    const fn new() -> Self {
+        Self {
+            state: State::On,
+            brightness: Self::MAX_BRIGHTNESS,
+            flicker: Self::MAX_FLICKER,
+        }
+    }
+
+    fn on(&mut self) {
+        self.state = State::On;
+    }
+
+    fn off(&mut self) {
+        self.state = State::Off;
+    }
+
+    fn inc_flicker(&mut self) {
+        self.flicker = (self.flicker + 1).min(Self::MAX_FLICKER);
+    }
+
+    fn dec_flicker(&mut self) {
+        if self.flicker > 0 {
+            self.flicker -= 1;
+        }
+    }
+
+    fn inc_brightness(&mut self) {
+        self.brightness = (self.brightness + 1).min(Self::MAX_BRIGHTNESS);
+    }
+
+    fn dec_brightness(&mut self) {
+        if self.brightness > 0 {
+            self.brightness -= 1;
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 enum State {
     On,
     Off,
 }
 
-// Clock speed configured in fuses
-type Speed = attiny_hal::clock::MHz1;
-
-static mut IR: Option<Receiver<IrProto, IrPin>> = None;
-static mut CLOCK: Option<clock::MonotonicClock<Speed>> = None;
-static STATE: Mutex<Cell<State>> = Mutex::new(Cell::new(State::On));
+#[derive(Copy, Clone)]
+enum Button {
+    On,
+    Off,
+    Plus,
+    Minus,
+    Sl,
+    Fl,
+}
 
 #[avr_device::interrupt(attiny85)]
 fn PCINT0() {
+    // The interrupt macro magically turns this into a &mut Button for us in the function
+    static mut LAST: Button = Button::Off;
+    static mut CURRENT: Settings = Settings::new();
     let ir = unsafe { IR.as_mut().unwrap() };
     let clock = unsafe { CLOCK.as_ref().unwrap() };
     let now = clock.now();
 
-    let new_state = match ir.event_instant(now) {
+    let cmd = match ir.event_instant(now) {
         Ok(Some(cmd)) => {
             if cmd.repeat {
-                None
+                Some(*LAST)
             } else {
                 match cmd.cmd {
-                    // On
-                    0x40 => Some(State::On),
-                    // Off
-                    0x19 => Some(State::Off),
+                    0x40 => Some(Button::On),
+                    0x19 => Some(Button::Off),
+                    0x44 => Some(Button::Plus),
+                    0x16 => Some(Button::Minus),
+                    0x0D => Some(Button::Fl),
+                    0x43 => Some(Button::Sl),
                     _ => None,
                 }
             }
@@ -62,10 +126,17 @@ fn PCINT0() {
         _ => None,
     };
 
-    if let Some(new_state) = new_state {
-        avr_device::interrupt::free(|cs| {
-            STATE.borrow(cs).set(new_state);
-        });
+    if let Some(cmd) = cmd {
+        *LAST = cmd;
+        match cmd {
+            Button::On => CURRENT.on(),
+            Button::Off => CURRENT.off(),
+            Button::Plus => CURRENT.inc_brightness(),
+            Button::Minus => CURRENT.dec_brightness(),
+            Button::Fl => CURRENT.inc_flicker(),
+            Button::Sl => CURRENT.dec_flicker(),
+        }
+        avr_device::interrupt::free(|cs| NEW_SETTINGS.borrow(cs).replace(Some(*CURRENT)));
     }
 }
 
@@ -104,18 +175,41 @@ fn main() -> ! {
     unsafe { avr_device::interrupt::enable() };
 
     let mut delay = attiny_hal::delay::Delay::<attiny_hal::clock::MHz1>::new();
+    let mut settings = Settings::new();
     loop {
-        let state = avr_device::interrupt::free(|cs| STATE.borrow(cs).get());
-        match state {
+        let new_settings =
+            avr_device::interrupt::free(|cs| NEW_SETTINGS.borrow(cs).borrow_mut().take());
+
+        if let Some(new) = new_settings {
+            settings = new;
+            let duty: u16 =
+                (u8::MAX as u16 * settings.brightness as u16) / Settings::MAX_BRIGHTNESS as u16;
+            led.set_max_duty(duty as u8);
+
+            // Short quick flicker when settings change
+            for _ in 0..3 {
+                led.off();
+                delay.delay_ms(20);
+                led.on();
+                delay.delay_ms(20);
+            }
+        }
+
+        match settings.state {
             State::On => {
-                let duty: u16 = rng.next_range(0..20);
-                if duty > 10 {
+                if settings.flicker == 0 {
                     led.on();
+                    avr_device::asm::sleep();
                 } else {
-                    // Flare up to 50% brightness
-                    led.brightness((duty * 5) as u8);
+                    let duty: u16 = rng
+                        .next_range(0..20 + 2 * (Settings::MAX_FLICKER - settings.flicker) as u16);
+                    if duty > 10 {
+                        led.on();
+                    } else {
+                        led.set_brightness_percent((20 + duty * 4) as u8);
+                    }
+                    delay.delay_ms(72);
                 }
-                delay.delay_ms(72);
             }
             State::Off => {
                 led.off();
