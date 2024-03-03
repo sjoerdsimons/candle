@@ -22,8 +22,10 @@ features = ["attiny85", "rt"]
 
 [profile.dev]
 panic = "abort"
-lto = true
+lto = "fat"
 opt-level = "s"
+# IR receiving code doesn't work without this?!?!
+codegen-units = 1
 
 [profile.release]
 opt-level = "s"
