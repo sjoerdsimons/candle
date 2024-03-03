@@ -103,8 +103,12 @@ fn PCINT0() {
     // The interrupt macro magically turns this into a &mut Button for us in the function
     static mut LAST: (u32, Button) = (0, Button::Off);
     static mut CURRENT: Settings = Settings::new();
-    let ir = unsafe { IR.as_mut().unwrap() };
-    let clock = unsafe { CLOCK.as_ref().unwrap() };
+    let Some(clock) = (unsafe { CLOCK.as_ref() }) else {
+        return;
+    };
+    let Some(ir) = (unsafe { IR.as_mut() }) else {
+        return;
+    };
     let now = clock.now();
 
     let cmd = match ir.event_instant(now) {
@@ -149,7 +153,9 @@ fn PCINT0() {
 
 #[avr_device::interrupt(attiny85)]
 fn TIMER0_OVF() {
-    unsafe { CLOCK.as_ref().unwrap().overflow() };
+    if let Some(clock) = unsafe { CLOCK.as_ref() } {
+        clock.overflow()
+    }
 }
 
 #[attiny_hal::entry]
