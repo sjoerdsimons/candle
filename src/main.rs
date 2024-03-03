@@ -101,7 +101,7 @@ enum Button {
 #[avr_device::interrupt(attiny85)]
 fn PCINT0() {
     // The interrupt macro magically turns this into a &mut Button for us in the function
-    static mut LAST: Button = Button::Off;
+    static mut LAST: (u32, Button) = (0, Button::Off);
     static mut CURRENT: Settings = Settings::new();
     let ir = unsafe { IR.as_mut().unwrap() };
     let clock = unsafe { CLOCK.as_ref().unwrap() };
@@ -110,8 +110,15 @@ fn PCINT0() {
     let cmd = match ir.event_instant(now) {
         Ok(Some(cmd)) => {
             if cmd.repeat {
-                Some(*LAST)
+                if now.saturating_sub(LAST.0) < (clock.freq() / 4) {
+                    Some(LAST.1)
+                } else {
+                    None
+                }
             } else {
+                if cmd.addr != 0 {
+                    return;
+                }
                 match cmd.cmd {
                     0x40 => Some(Button::On),
                     0x19 => Some(Button::Off),
@@ -127,7 +134,7 @@ fn PCINT0() {
     };
 
     if let Some(cmd) = cmd {
-        *LAST = cmd;
+        *LAST = (now, cmd);
         match cmd {
             Button::On => CURRENT.on(),
             Button::Off => CURRENT.off(),
