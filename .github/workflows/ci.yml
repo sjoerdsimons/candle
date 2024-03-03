@@ -1,0 +1,23 @@
+name: test suite
+on:
+  push:
+    branches-ignore:
+      - "gh-readonly-queue/**"
+  pull_request:
+  merge_group:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: rust:slim-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build-depends
+        run: apt update && apt install -y gcc-avr avr-libc
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: target/avr-attiny85/release/candle.elf
